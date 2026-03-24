@@ -10,8 +10,9 @@ pub use options::WebOptions;
 mod permissions;
 pub(crate) use permissions::PermissionsContainer;
 pub use permissions::{
-    AllowlistWebPermissions, CheckedPath, DefaultWebPermissions, PermissionCheckError,
-    PermissionDeniedError, SystemsPermissionKind, WebPermissions,
+    to_permissions_options, AllowlistWebPermissions, CheckedPath, DefaultWebPermissions,
+    PermissionCheckError, PermissionDeniedError, PermissionsOptions, SystemsPermissionKind,
+    WebPermissions,
 };
 
 /// Stub for a node op deno_net expects to find
@@ -50,7 +51,7 @@ impl ExtensionTrait<WebOptions> for deno_fetch::deno_fetch {
             resolver: options.resolver.clone(),
         };
 
-        deno_fetch::deno_fetch::init::<PermissionsContainer>(options)
+        deno_fetch::deno_fetch::init(options)
     }
 }
 
@@ -80,7 +81,7 @@ impl ExtensionTrait<WebOptions> for init_net {
 }
 impl ExtensionTrait<WebOptions> for deno_net::deno_net {
     fn init(options: WebOptions) -> Extension {
-        deno_net::deno_net::init::<PermissionsContainer>(
+        deno_net::deno_net::init(
             options.root_cert_store_provider.clone(),
             options.unsafely_ignore_certificate_errors.clone(),
         )
@@ -113,7 +114,18 @@ extension!(
     options = {
         permissions: Arc<dyn WebPermissions>
     },
-    state = |state, config| state.put(PermissionsContainer(config.permissions)),
+    state = |state, config| {
+        state.put(PermissionsContainer(config.permissions.clone()));
+        if !state.has::<deno_permissions::PermissionsContainer>() {
+            let parser = Arc::new(deno_permissions::RuntimePermissionDescriptorParser::new(sys_traits::impls::RealSys));
+            let opts = permissions::to_permissions_options(config.permissions.as_ref());
+            let permissions = match deno_permissions::Permissions::from_options(&*parser, &opts) {
+                Ok(p) => deno_permissions::PermissionsContainer::new(parser, p),
+                Err(_) => deno_permissions::PermissionsContainer::allow_all(parser),
+            };
+            state.put(permissions);
+        }
+    },
 );
 impl ExtensionTrait<WebOptions> for init_web {
     fn init(options: WebOptions) -> Extension {
@@ -123,7 +135,11 @@ impl ExtensionTrait<WebOptions> for init_web {
 
 impl ExtensionTrait<WebOptions> for deno_web::deno_web {
     fn init(options: WebOptions) -> Extension {
-        deno_web::deno_web::init::<PermissionsContainer>(options.blob_store, options.base_url)
+        deno_web::deno_web::init(
+            options.blob_store,
+            options.base_url,
+            options.broadcast_channel,
+        )
     }
 }
 

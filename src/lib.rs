@@ -406,8 +406,9 @@ pub use ext::node::resolvers::RustyResolver;
 #[cfg(feature = "web")]
 #[cfg_attr(docsrs, doc(cfg(feature = "web")))]
 pub use ext::web::{
-    AllowlistWebPermissions, CheckedPath, DefaultWebPermissions, PermissionCheckError,
-    PermissionDeniedError, SystemsPermissionKind, WebOptions, WebPermissions,
+    to_permissions_options, AllowlistWebPermissions, CheckedPath, DefaultWebPermissions,
+    PermissionCheckError, PermissionDeniedError, PermissionsOptions, SystemsPermissionKind,
+    WebOptions, WebPermissions,
 };
 pub use ext::ExtensionOptions;
 
@@ -421,9 +422,16 @@ pub use module_wrapper::ModuleWrapper;
 pub use runtime::{Runtime, RuntimeOptions, Undefined};
 pub use utilities::{evaluate, import, init_platform, resolve_path, validate};
 
+// Deprecated traits for backward compatibility
+#[allow(deprecated)]
+#[deprecated(since = "0.8.0", note = "Use v8::String::new() directly")]
+pub use traits::ToV8String;
+
 #[cfg(feature = "broadcast_channel")]
 #[cfg_attr(docsrs, doc(cfg(feature = "broadcast_channel")))]
-pub use ext::broadcast_channel::BroadcastChannelWrapper;
+pub use ext::broadcast_channel::{
+    BroadcastChannelWrapper, IsolatedBroadcastChannel, IsolatedBroadcastChannelWrapper,
+};
 
 #[cfg(feature = "web")]
 #[cfg_attr(docsrs, doc(cfg(feature = "web")))]

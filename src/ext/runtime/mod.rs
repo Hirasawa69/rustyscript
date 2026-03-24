@@ -1,5 +1,6 @@
 use std::{collections::HashSet, rc::Rc, sync::Arc};
 
+use deno_bundle_runtime::BundleProvider;
 use deno_core::{
     extension,
     v8::{BackingStore, SharedRef},
@@ -11,7 +12,8 @@ use deno_telemetry::OtelConfig;
 use sys_traits::impls::RealSys;
 
 use super::{
-    node::resolvers::RustyResolver, web::PermissionsContainer, ExtensionOptions, ExtensionTrait,
+    node::resolvers::RustyResolver, web::to_permissions_options, web::PermissionsContainer,
+    ExtensionOptions, ExtensionTrait,
 };
 use crate::module_loader::{LoaderOptions, RustyLoader};
 
@@ -19,7 +21,15 @@ fn build_permissions(
     permissions_container: &PermissionsContainer,
 ) -> ::deno_permissions::PermissionsContainer {
     let parser = Arc::new(RuntimePermissionDescriptorParser::<RealSys>::new(RealSys));
-    ::deno_permissions::PermissionsContainer::new(parser, Permissions::allow_all())
+    let opts = to_permissions_options(permissions_container.0.as_ref());
+
+    match Permissions::from_options(&*parser, &opts) {
+        Ok(perms) => ::deno_permissions::PermissionsContainer::new(parser, perms),
+        Err(_) => {
+            // Fallback for backward compatibility
+            ::deno_permissions::PermissionsContainer::new(parser, Permissions::allow_all())
+        }
+    }
 }
 
 // Some of the polyfills reference the denoland/deno runtime directly
@@ -61,6 +71,12 @@ impl ExtensionTrait<()> for deno_runtime::runtime {
         let mut e = deno_runtime::runtime::init();
         e.esm_entry_point = None;
         e
+    }
+}
+
+impl ExtensionTrait<Option<Arc<dyn BundleProvider>>> for deno_bundle_runtime::deno_bundle_runtime {
+    fn init(bundle_provider: Option<Arc<dyn BundleProvider>>) -> Extension {
+        deno_bundle_runtime::deno_bundle_runtime::init(bundle_provider)
     }
 }
 
@@ -132,6 +148,7 @@ pub fn extensions(
     is_snapshot: bool,
 ) -> Vec<Extension> {
     vec![
+        deno_bundle_runtime::deno_bundle_runtime::build(None, is_snapshot),
         deno_fs_events::build((), is_snapshot),
         deno_bootstrap::build((), is_snapshot),
         deno_os::build((), is_snapshot),
@@ -145,6 +162,7 @@ pub fn extensions(
     ]
 }
 
+use deno_runtime::deno_inspector_server::MainInspectorSessionChannel;
 use deno_runtime::web_worker::{WebWorker, WebWorkerOptions, WebWorkerServiceOptions};
 use deno_runtime::{colors, BootstrapOptions, WorkerExecutionMode, WorkerLogLevel};
 #[derive(Clone)]
@@ -152,7 +170,7 @@ pub struct WebWorkerCallbackOptions {
     shared_array_buffer_store: Option<CrossIsolateStore<SharedRef<BackingStore>>>,
     node_resolver: Arc<RustyResolver>,
     root_cert_store_provider: Option<Arc<dyn deno_tls::RootCertStoreProvider>>,
-    broadcast_channel: deno_broadcast_channel::InMemoryBroadcastChannel,
+    broadcast_channel: deno_web::InMemoryBroadcastChannel,
     unsafely_ignore_certificate_errors: Option<Vec<String>>,
     seed: Option<u64>,
     stdio: deno_io::Stdio,
@@ -205,11 +223,12 @@ fn create_web_worker_callback(options: WebWorkerCallbackOptions) -> Arc<CreateWe
             broadcast_channel: options.broadcast_channel.clone(),
             shared_array_buffer_store: options.shared_array_buffer_store.clone(),
             compiled_wasm_module_store: None,
-            maybe_inspector_server: None,
             feature_checker: feature_checker.into(),
             npm_process_state_provider: Some(node_resolver.clone()),
             permissions: args.permissions,
             deno_rt_native_addon_loader: None,
+            bundle_provider: None,
+            main_inspector_session_tx: MainInspectorSessionChannel::default(),
         };
 
         let options = WebWorkerOptions {
@@ -235,7 +254,7 @@ fn create_web_worker_callback(options: WebWorkerCallbackOptions) -> Arc<CreateWe
                 has_node_modules_dir: node_resolver.has_node_modules_dir(),
                 argv0: None,
                 node_debug: None,
-                node_ipc_fd: None,
+                node_ipc_init: None,
                 mode: WorkerExecutionMode::Worker,
                 serve_port: None,
                 serve_host: None,
@@ -250,15 +269,16 @@ fn create_web_worker_callback(options: WebWorkerCallbackOptions) -> Arc<CreateWe
             unsafely_ignore_certificate_errors: options.unsafely_ignore_certificate_errors.clone(),
             seed: options.seed,
             create_web_worker_cb,
-            format_js_error_fn: Some(Arc::new(format_js_error)),
+            format_js_error_fn: Some(Arc::new(|e| format_js_error(e, None))),
             worker_type: args.worker_type,
             stdio: options.stdio.clone(),
             cache_storage_dir: None,
-            strace_ops: None,
+            trace_ops: None,
             close_on_idle: false,
             maybe_worker_metadata: None,
             create_params: None,
             enable_stack_trace_arg_in_ops: false,
+            maybe_coverage_dir: None,
         };
         WebWorker::bootstrap_from_options(services, options)
     })

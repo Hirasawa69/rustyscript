@@ -5,12 +5,16 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-pub use deno_permissions::{CheckedPath, PermissionCheckError, PermissionDeniedError};
+pub use deno_permissions::{
+    CheckedPath, PermissionCheckError, PermissionDeniedError, PermissionState, PermissionsOptions,
+};
 
 pub fn oops(msg: impl std::fmt::Display) -> PermissionCheckError {
     PermissionCheckError::PermissionDenied(PermissionDeniedError {
         access: msg.to_string(),
         name: "web",
+        custom_message: None,
+        state: PermissionState::Denied,
     })
 }
 
@@ -156,11 +160,11 @@ impl AllowlistWebPermissions {
         Self(Arc::new(RwLock::new(AllowlistWebPermissionsSet::default())))
     }
 
-    fn borrow(&self) -> std::sync::RwLockReadGuard<AllowlistWebPermissionsSet> {
+    fn borrow(&self) -> std::sync::RwLockReadGuard<'_, AllowlistWebPermissionsSet> {
         self.0.read().expect("Could not lock permissions")
     }
 
-    fn borrow_mut(&self) -> std::sync::RwLockWriteGuard<AllowlistWebPermissionsSet> {
+    fn borrow_mut(&self) -> std::sync::RwLockWriteGuard<'_, AllowlistWebPermissionsSet> {
         self.0.write().expect("Could not lock permissions")
     }
 
@@ -632,84 +636,73 @@ impl_sys_permission_kinds!(
     Inspector("inspector"),
 );
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct PermissionsContainer(pub Arc<dyn WebPermissions>);
-impl deno_web::TimersPermission for PermissionsContainer {
-    fn allow_hrtime(&mut self) -> bool {
-        self.0.allow_hrtime()
-    }
-}
-impl deno_fetch::FetchPermissions for PermissionsContainer {
-    fn check_net_url(
-        &mut self,
-        url: &reqwest::Url,
-        api_name: &str,
-    ) -> Result<(), PermissionCheckError> {
-        self.0.check_url(url, api_name)?;
-        Ok(())
-    }
 
-    fn check_open<'a>(
-        &mut self,
-        path: Cow<'a, Path>,
-        open_access: deno_permissions::OpenAccessKind,
-        api_name: &str,
-    ) -> Result<CheckedPath<'a>, PermissionCheckError> {
-        let read = open_access.is_read();
-        let write = open_access.is_write();
+/// Convert WebPermissions to deno_permissions::PermissionsOptions
+///
+/// This function probes the WebPermissions trait methods to determine
+/// what should be allowed, then converts to PermissionsOptions format.
+///
+/// - For `DefaultWebPermissions` (or equivalent allow-all): returns options that allow everything
+/// - For restrictive permissions (e.g., `AllowlistWebPermissions`): returns options that deny by default
+pub fn to_permissions_options(perms: &dyn WebPermissions) -> PermissionsOptions {
+    // Probe to detect if this is an allow-all implementation
+    // We test multiple permission categories to be thorough
+    let is_allow_all = perms.allow_hrtime()
+        && perms.check_read_all(None).is_ok()
+        && perms.check_write_all("probe").is_ok()
+        && perms.check_host("0.0.0.0", Some(0), "probe").is_ok()
+        && perms.check_env("__PROBE__").is_ok()
+        && perms.check_exec().is_ok();
 
-        let p = self
-            .0
-            .check_open(true, read, write, path, api_name)
-            .ok_or(oops("open"))?;
-
-        Ok(CheckedPath::unsafe_new(p))
-    }
-
-    fn check_net_vsock(
-        &mut self,
-        cid: u32,
-        port: u32,
-        api_name: &str,
-    ) -> Result<(), PermissionCheckError> {
-        self.0.check_vsock(cid, port, api_name)?;
-        Ok(())
-    }
-}
-impl deno_net::NetPermissions for PermissionsContainer {
-    fn check_net<T: AsRef<str>>(
-        &mut self,
-        host: &(T, Option<u16>),
-        api_name: &str,
-    ) -> Result<(), PermissionCheckError> {
-        self.0.check_host(host.0.as_ref(), host.1, api_name)?;
-        Ok(())
-    }
-
-    fn check_open<'a>(
-        &mut self,
-        path: Cow<'a, Path>,
-        open_access: deno_permissions::OpenAccessKind,
-        api_name: &str,
-    ) -> Result<CheckedPath<'a>, PermissionCheckError> {
-        let read = open_access.is_read();
-        let write = open_access.is_write();
-
-        let p = self
-            .0
-            .check_open(true, read, write, path, api_name)
-            .ok_or(oops("open"))?;
-
-        Ok(CheckedPath::unsafe_new(p))
-    }
-
-    fn check_vsock(
-        &mut self,
-        cid: u32,
-        port: u32,
-        api_name: &str,
-    ) -> Result<(), PermissionCheckError> {
-        self.0.check_vsock(cid, port, api_name)?;
-        Ok(())
+    if is_allow_all {
+        // DefaultWebPermissions or equivalent - allow everything
+        PermissionsOptions {
+            allow_read: Some(vec![]),
+            deny_read: None,
+            ignore_read: None,
+            allow_write: Some(vec![]),
+            deny_write: None,
+            allow_net: Some(vec![]),
+            deny_net: None,
+            allow_env: Some(vec![]),
+            deny_env: None,
+            ignore_env: None,
+            allow_sys: Some(vec![]),
+            deny_sys: None,
+            allow_ffi: Some(vec![]),
+            deny_ffi: None,
+            allow_run: Some(vec![]),
+            deny_run: None,
+            allow_import: Some(vec![]),
+            deny_import: None,
+            prompt: false,
+        }
+    } else {
+        // Restrictive permissions - deny everything by default
+        // The deno extensions will check permissions and deny operations
+        PermissionsOptions {
+            allow_read: None,
+            deny_read: None,
+            ignore_read: None,
+            allow_write: None,
+            deny_write: None,
+            allow_net: None,
+            deny_net: None,
+            allow_env: None,
+            deny_env: None,
+            ignore_env: None,
+            allow_sys: None,
+            deny_sys: None,
+            allow_ffi: None,
+            deny_ffi: None,
+            allow_run: None,
+            deny_run: None,
+            allow_import: Some(vec![]), // Allow imports by default for module loading
+            deny_import: None,
+            prompt: false,
+        }
     }
 }
