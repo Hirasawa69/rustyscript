@@ -1,9 +1,10 @@
 import * as _console from 'ext:deno_web/01_console.js';
+import { core } from 'ext:core/mod.js';
 
 import { applyToGlobal, nonEnumerable } from 'ext:rustyscript/rustyscript.js';
 
 const consoleInstance = new _console.Console((msg, level) =>
-  globalThis.Deno.core.print(msg, level > 1),
+  core.print(msg, level > 1),
 );
 for (const name of [
   "log",

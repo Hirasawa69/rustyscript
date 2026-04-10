@@ -79,6 +79,6 @@ applyToDeno({
 
 import * as _console from 'ext:deno_web/01_console.js';
 _console.setNoColorFns(
-    () => globalThis.Deno.core.ops.op_bootstrap_no_color(),
-    () => globalThis.Deno.core.ops.op_bootstrap_no_color(),
+    () => core.ops.op_bootstrap_no_color(),
+    () => core.ops.op_bootstrap_no_color(),
 );

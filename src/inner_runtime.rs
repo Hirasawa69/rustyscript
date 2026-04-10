@@ -27,14 +27,9 @@ use crate::{
 fn safe_prepare_stack_trace_callback<'s>(
     scope: &mut v8::PinScope<'s, '_>,
     error: v8::Local<'s, v8::Value>,
-    _callsites: v8::Local<'s, v8::Array>,
+    callsites: v8::Local<'s, v8::Array>,
 ) -> v8::Local<'s, v8::Value> {
-    let message = error.to_string(scope).map_or_else(
-        || "Uncaught Error".to_string(),
-        |s| s.to_rust_string_lossy(scope),
-    );
-
-    v8::String::new(scope, &message).map_or_else(|| v8::undefined(scope).into(), Into::into)
+    deno_core::error::format_stack_trace(scope, error, callsites)
 }
 
 /// Wrapper trait to make the `InnerRuntime` generic over the runtime types

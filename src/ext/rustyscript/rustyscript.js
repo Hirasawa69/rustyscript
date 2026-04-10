@@ -12,9 +12,9 @@ const ObjectProperties = {
         };
     }
 }
-const nonEnumerable = (value) => ObjectProperties.apply(value, nonEnumerable);
-const readOnly = (value) => ObjectProperties.apply(value, readOnly);
-const writeable = (value) => ObjectProperties.apply(value, writeable);
+const nonEnumerable = (value) => ObjectProperties.apply(value, 'nonEnumerable');
+const readOnly = (value) => ObjectProperties.apply(value, 'readOnly');
+const writeable = (value) => ObjectProperties.apply(value, 'writeable');
 const getterOnly = (getter) => {
     return {
         get: getter,
