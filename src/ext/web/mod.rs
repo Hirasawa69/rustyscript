@@ -50,6 +50,7 @@ impl ExtensionTrait<WebOptions> for deno_fetch::deno_fetch {
             file_fetch_handler: options.file_fetch_handler.clone(),
             client_builder_hook: options.client_builder_hook,
             resolver: options.resolver.clone(),
+            origin_tracker: options.origin_tracker.clone(),
         };
 
         deno_fetch::deno_fetch::init(options)

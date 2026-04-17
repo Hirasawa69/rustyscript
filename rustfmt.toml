@@ -1,0 +1,4 @@
+# Opt out of rustfmt. Prevents downstream consumers from reformatting
+# this crate under their own rustfmt config when used as a path or
+# submodule dependency.
+disable_all_formatting = true

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use deno_fetch::dns::Resolver;
 use hyper_util::client::legacy::Builder;
@@ -77,6 +77,13 @@ pub struct WebOptions {
 
     /// OpenTelemetry configuration for the `deno_telemetry` extension
     pub telemetry_config: deno_telemetry::OtelConfig,
+
+    /// Injectable document-origin tracker forwarded to
+    /// [`deno_fetch::Options::origin_tracker`]. `None` leaves the fetch
+    /// transport using its own default behaviour; otherwise the embedder
+    /// holds the `Arc` and updates the inner `Option<String>` whenever
+    /// the active document origin changes.
+    pub origin_tracker: Option<Arc<Mutex<Option<String>>>>,
 }
 
 impl Default for WebOptions {
@@ -96,6 +103,7 @@ impl Default for WebOptions {
             client_builder_hook: None,
             resolver: Resolver::default(),
             telemetry_config: deno_telemetry::OtelConfig::default(),
+            origin_tracker: None,
         }
     }
 }
