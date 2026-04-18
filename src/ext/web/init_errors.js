@@ -2,7 +2,7 @@
 
 import * as event from 'ext:deno_web/02_event.js';
 import { DOMException } from "ext:deno_web/01_dom_exception.js";
-import { DedicatedWorkerGlobalScope } from 'ext:deno_web/04_global_interfaces.js';
+import { DedicatedWorkerGlobalScope, Window } from 'ext:deno_web/04_global_interfaces.js';
 import { core, primordials, internals } from "ext:core/mod.js";
 import { op_set_format_exception_callback } from "ext:core/ops";
 
@@ -345,6 +345,6 @@ const errors = {
 let globalThis_;
 globalThis_ = globalThis;
 
-primordials.ObjectSetPrototypeOf(globalThis, DedicatedWorkerGlobalScope.prototype);
+primordials.ObjectSetPrototypeOf(globalThis, Window.prototype);
 event.saveGlobalThisReference(globalThis);
 event.setEventTargetData(globalThis);
